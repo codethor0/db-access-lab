@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+evidence/
+*.log
+.DS_Store
+.idea/
+.vscode/
+node_modules/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+scripts/db-vendor-test-lab/
+*.key
