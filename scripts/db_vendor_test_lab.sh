@@ -762,7 +762,7 @@ set_vendor_password() {
       -U "$ADMIN_USER" \
       -d "$DB_NAME" \
       -v vendor_password="$VENDOR_PASSWORD" \
-      -c "ALTER ROLE \"$VENDOR_USER\" PASSWORD :'vendor_password';" \
+      <<< "ALTER ROLE \"$VENDOR_USER\" PASSWORD :'vendor_password';" \
       >/dev/null
   )
 }
