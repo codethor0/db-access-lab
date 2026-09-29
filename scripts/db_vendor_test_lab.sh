@@ -396,7 +396,7 @@ HIGH_SIGNAL_PATTERNS = [
         re.I,
     )),
     ("SENSITIVE CATALOG ACCESS", re.compile(
-        r"\b(pg_authid|pg_shadow|pg_user_mapping|pg_hba_file_rules)\b", re.I
+        r"\b(pg_authid|pg_shadow|pg_user_mapping|pg_hba_file_rules|pg_roles|pg_user)\b", re.I
     )),
     ("SERVER FILE FUNCTION", re.compile(
         r"\b(pg_read_file|pg_read_binary_file|pg_ls_dir|pg_stat_file|lo_import|lo_export)\b",
@@ -529,7 +529,7 @@ def analyze_record(record):
         emit_alert("AUTHENTICATION FAILURE", record)
         return
 
-    if "no pg_hba.conf entry" in lower:
+    if "no pg_hba.conf entry" in lower or "pg_hba.conf rejects connection" in lower:
         emit_alert("PG_HBA REJECTION", record)
         return
 
