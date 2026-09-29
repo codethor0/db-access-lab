@@ -6,6 +6,13 @@ The project follows Semantic Versioning once tagged releases begin.
 
 ## Unreleased
 
+## [0.1.1] - 2026-09-29
+
+### Security
+
+- Alert on pg_hba connection rejections (for example a vendor connecting without TLS).
+- Detect role enumeration via pg_roles and pg_user as sensitive catalog access.
+
 ## [0.1.0] - 2026-09-29
 
 ### Security
