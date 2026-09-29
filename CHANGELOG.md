@@ -6,6 +6,8 @@ The project follows Semantic Versioning once tagged releases begin.
 
 ## Unreleased
 
+## [0.1.0] - 2026-09-29
+
 ### Security
 
 - Hardened the disposable PostgreSQL lab around TLS-only vendor TCP access.
