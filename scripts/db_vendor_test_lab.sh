@@ -8,7 +8,6 @@ COMPOSE_FILE="$LAB_DIR/docker-compose.yml"
 
 readonly SCRIPT_DIR LAB_DIR ENV_FILE COMPOSE_FILE
 
-DASHBOARD_TABLES=(customers subscriptions transactions api_usage invoices)
 
 note() {
   printf '\n==> %s\n' "$*"
@@ -145,13 +144,17 @@ services:
     image: ${POSTGRES_IMAGE}
     user: root
     restart: "no"
-    entrypoint: ["/bin/sh", "-eu", "-c"]
-    command: >-
-      cp /tls-source/server.crt /tls/server.crt;
-      cp /tls-source/server.key /tls/server.key;
-      chown postgres:postgres /tls/server.crt /tls/server.key;
-      chmod 0644 /tls/server.crt;
-      chmod 0600 /tls/server.key
+    entrypoint:
+      - /bin/sh
+      - -eu
+      - -c
+      - |
+        cp /tls-source/server.crt /tls/server.crt
+        cp /tls-source/server.key /tls/server.key
+        chown postgres:postgres /tls/server.crt /tls/server.key
+        chmod 0644 /tls/server.crt
+        chmod 0600 /tls/server.key
+    command: []
     volumes:
       - ./tls:/tls-source:ro
       - db_vendor_lab_tls:/tls
@@ -764,14 +767,20 @@ cmd_start() {
   exposure_guard
 
   note "Starting disposable PostgreSQL lab"
-  (
+  if ! (
     cd "$LAB_DIR"
     docker compose --env-file "$ENV_FILE" up -d
-  )
+  ); then
+    (
+      cd "$LAB_DIR"
+      docker compose --env-file "$ENV_FILE" logs --no-color tls-init postgres >&2 || true
+    )
+    die "Docker Compose startup failed."
+  fi
 
   note "Waiting for initialization to complete"
-  local i
-  for i in $(seq 1 40); do
+  local attempts=40
+  while (( attempts-- > 0 )); do
     if (
       cd "$LAB_DIR"
       docker compose --env-file "$ENV_FILE" exec -T postgres \
@@ -786,6 +795,10 @@ cmd_start() {
     sleep 2
   done
 
+  (
+    cd "$LAB_DIR"
+    docker compose --env-file "$ENV_FILE" logs --no-color tls-init postgres >&2 || true
+  )
   die "PostgreSQL did not finish initialization. Run: $0 status"
 }
 
@@ -837,12 +850,13 @@ cmd_watch() {
     (
       cd "$LAB_DIR"
       docker compose --env-file "$ENV_FILE" logs --no-color --no-log-prefix postgres
-    ) | (
-      export VENDOR_USER DISCORD_WEBHOOK_URL ALLOWED_IPS
-      export REPLAY_MODE=1
-      export ALERT_LOG=""
+    ) | env \
+      VENDOR_USER="$VENDOR_USER" \
+      DISCORD_WEBHOOK_URL="$DISCORD_WEBHOOK_URL" \
+      ALLOWED_IPS="$ALLOWED_IPS" \
+      REPLAY_MODE=1 \
+      ALERT_LOG="" \
       python3 "$LAB_DIR/monitor/watcher.py"
-    )
     return
   fi
 
@@ -850,12 +864,13 @@ cmd_watch() {
   (
     cd "$LAB_DIR"
     docker compose --env-file "$ENV_FILE" logs -f --tail 0 --no-color --no-log-prefix postgres
-  ) | (
-    export VENDOR_USER DISCORD_WEBHOOK_URL ALLOWED_IPS
-    export REPLAY_MODE=0
-    export ALERT_LOG="$LAB_DIR/evidence/alerts.log"
+  ) | env \
+    VENDOR_USER="$VENDOR_USER" \
+    DISCORD_WEBHOOK_URL="$DISCORD_WEBHOOK_URL" \
+    ALLOWED_IPS="$ALLOWED_IPS" \
+    REPLAY_MODE=0 \
+    ALERT_LOG="$LAB_DIR/evidence/alerts.log" \
     python3 "$LAB_DIR/monitor/watcher.py"
-  )
 }
 
 cmd_status() {
@@ -872,11 +887,15 @@ hash_directory() {
   if command -v shasum >/dev/null 2>&1; then
     (
       cd "$dir"
+      # SHA256SUMS.txt is explicitly excluded from the input set.
+      # shellcheck disable=SC2094
       find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 shasum -a 256 >SHA256SUMS.txt
     )
   elif command -v sha256sum >/dev/null 2>&1; then
     (
       cd "$dir"
+      # SHA256SUMS.txt is explicitly excluded from the input set.
+      # shellcheck disable=SC2094
       find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS.txt
     )
   else
@@ -932,7 +951,11 @@ cmd_evidence() {
   grep -Ev '^(ADMIN_PASSWORD|VENDOR_PASSWORD|DISCORD_WEBHOOK_URL)=' "$ENV_FILE" \
     >"$out/environment-redacted.txt"
 
-  repo_root="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || true)"
+  if repo_root="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd)"; then
+    :
+  else
+    repo_root=""
+  fi
   if [[ -n "$repo_root" ]] && git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     {
       printf 'commit='

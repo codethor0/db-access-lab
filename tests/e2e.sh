@@ -23,7 +23,7 @@ trap cleanup EXIT
 "$SCRIPT" start
 
 set -a
-# shellcheck disable=SC1090
+# shellcheck disable=SC1091
 source "$LAB_DIR/.env"
 set +a
 
