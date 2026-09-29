@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+
+      - name: Shell syntax
+        run: bash -n scripts/db_vendor_test_lab.sh
+
+      - name: ShellCheck
+        run: shellcheck scripts/db_vendor_test_lab.sh tests/*.sh
+
+      - name: Initialize generated lab files
+        env:
+          LAB_DIR: ${{ runner.temp }}/db-access-lab-static
+        run: ./scripts/db_vendor_test_lab.sh init
+
+      - name: Python syntax
+        env:
+          LAB_DIR: ${{ runner.temp }}/db-access-lab-static
+        run: python3 -m py_compile "$LAB_DIR/monitor/watcher.py"
+
+      - name: Watcher classification test
+        env:
+          LAB_DIR: ${{ runner.temp }}/db-access-lab-static
+        run: ./tests/watcher_smoke.sh
+
+      - name: Secret placement regression
+        env:
+          LAB_DIR: ${{ runner.temp }}/db-access-lab-static
+        run: |
+          set -a
+          source "$LAB_DIR/.env"
+          set +a
+          if grep -Fq -- "$VENDOR_PASSWORD" "$LAB_DIR/init/03-permissions.sql"; then
+            echo 'vendor password leaked into generated SQL' >&2
+            exit 1
+          fi
+
+  docker-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run Docker security E2E
+        env:
+          LAB_DIR: ${{ runner.temp }}/db-access-lab-e2e
+        run: ./tests/e2e.sh
