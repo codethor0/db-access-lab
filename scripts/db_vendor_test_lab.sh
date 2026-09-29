@@ -712,6 +712,12 @@ cmd_init() {
   write_schema
   write_fake_data
   write_permissions
+
+  # The container postgres user must read the bind-mounted init SQL.
+  # LAB_DIR stays 0700 so other host users cannot reach it.
+  chmod 700 "$LAB_DIR"
+  chmod 755 "$LAB_DIR/init"
+  chmod 644 "$LAB_DIR"/init/*.sql
   write_watcher
   write_reference
 
