@@ -95,3 +95,7 @@ the current lab secrets before reporting success.
 ## License
 
 Apache License 2.0. See `LICENSE`.
+
+## Support
+
+If this project is useful to you, you can support its continued development through [GitHub Sponsors](https://github.com/sponsors/codethor0).
