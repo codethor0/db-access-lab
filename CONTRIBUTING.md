@@ -26,6 +26,7 @@ Run:
 
     bash -n scripts/db_vendor_test_lab.sh
     shellcheck scripts/db_vendor_test_lab.sh tests/*.sh
+    ./tests/psql_regression.sh
 
 Then run the watcher smoke test and Docker E2E as documented in
 `docs/TESTING.md`.

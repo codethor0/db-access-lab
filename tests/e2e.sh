@@ -8,6 +8,20 @@ LAB_DIR="${LAB_DIR:-$RUNNER_TEMP/db-access-lab-e2e}"
 export LAB_DIR
 watch_pid=""
 
+# Record the argument list of every docker invocation, including the ones the
+# lab script makes, so the run can prove no password reached a process argv.
+REAL_DOCKER="$(command -v docker)"
+SHIM_DIR="$(mktemp -d)"
+ARGV_LOG="$SHIM_DIR/docker-argv.log"
+export REAL_DOCKER ARGV_LOG
+cat >"$SHIM_DIR/docker" <<'EOF_SHIM'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$ARGV_LOG"
+exec "$REAL_DOCKER" "$@"
+EOF_SHIM
+chmod 0755 "$SHIM_DIR/docker"
+PATH="$SHIM_DIR:$PATH"
+
 cleanup() {
   if [[ -n "$watch_pid" ]]; then
     kill "$watch_pid" >/dev/null 2>&1 || true
@@ -16,6 +30,7 @@ cleanup() {
   if [[ -f "$LAB_DIR/.env" ]]; then
     "$SCRIPT" destroy --yes >/dev/null 2>&1 || true
   fi
+  rm -rf "$SHIM_DIR"
 }
 trap cleanup EXIT
 
@@ -27,17 +42,20 @@ set -a
 source "$LAB_DIR/.env"
 set +a
 
-conn="host=127.0.0.1 port=$DB_PORT dbname=$DB_NAME user=$VENDOR_USER password=$VENDOR_PASSWORD"
+# The password travels as PGPASSWORD in the environment, never in argv.
+PGPASSWORD="$VENDOR_PASSWORD"
+export PGPASSWORD
+conn="host=127.0.0.1 port=$DB_PORT dbname=$DB_NAME user=$VENDOR_USER"
 psql_image="${POSTGRES_IMAGE:-postgres:16}"
 
 
 # TLS connection and approved SELECT must work.
-docker run --rm --network host "$psql_image" \
+docker run --rm --network host -e PGPASSWORD "$psql_image" \
   psql "$conn sslmode=require" -v ON_ERROR_STOP=1 \
   -Atqc 'SELECT count(*) FROM public.customers' | grep -Eq '^[0-9]+$'
 
 # Plaintext TCP must fail.
-if docker run --rm --network host "$psql_image" \
+if docker run --rm --network host -e PGPASSWORD "$psql_image" \
   psql "$conn sslmode=disable" -Atqc 'SELECT 1' >/dev/null 2>&1; then
   echo 'plaintext database connection unexpectedly succeeded' >&2
   exit 1
@@ -49,7 +67,7 @@ watch_pid=$!
 sleep 2
 
 # Write must fail.
-if docker run --rm --network host "$psql_image" \
+if docker run --rm --network host -e PGPASSWORD "$psql_image" \
   psql "$conn sslmode=require" -v ON_ERROR_STOP=1 \
   -c "UPDATE public.customers SET country='US' WHERE customer_id=1" >/dev/null 2>&1; then
   echo 'vendor UPDATE unexpectedly succeeded' >&2
@@ -57,7 +75,7 @@ if docker run --rm --network host "$psql_image" \
 fi
 
 # Canary must fail.
-if docker run --rm --network host "$psql_image" \
+if docker run --rm --network host -e PGPASSWORD "$psql_image" \
   psql "$conn sslmode=require" -v ON_ERROR_STOP=1 \
   -c 'SELECT * FROM internal_test.research_notes' >/dev/null 2>&1; then
   echo 'vendor canary access unexpectedly succeeded' >&2
@@ -65,7 +83,7 @@ if docker run --rm --network host "$psql_image" \
 fi
 
 # TEMP creation must fail because PUBLIC database privileges were revoked.
-if docker run --rm --network host "$psql_image" \
+if docker run --rm --network host -e PGPASSWORD "$psql_image" \
   psql "$conn sslmode=require" -v ON_ERROR_STOP=1 \
   -c 'CREATE TEMP TABLE should_fail(id int)' >/dev/null 2>&1; then
   echo 'vendor TEMP privilege unexpectedly succeeded' >&2
@@ -74,7 +92,7 @@ fi
 
 # A read-write override may be accepted as a setting, but must be observable and
 # must not grant write privileges.
-docker run --rm --network host "$psql_image" \
+docker run --rm --network host -e PGPASSWORD "$psql_image" \
   psql "$conn sslmode=require" -v ON_ERROR_STOP=1 \
   -c 'SET default_transaction_read_only = off' >/dev/null
 
@@ -99,6 +117,14 @@ done
 
 "$SCRIPT" evidence >/dev/null
 
+grep -q 'psql' "$ARGV_LOG" || { echo 'docker argv recorder captured no psql calls' >&2; exit 1; }
+for secret in "$ADMIN_PASSWORD" "$VENDOR_PASSWORD"; do
+  if grep -Fq -- "$secret" "$ARGV_LOG"; then
+    echo 'a lab password appeared in a docker process argument list' >&2
+    exit 1
+  fi
+done
+
 latest="$(find "$LAB_DIR/evidence" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)"
 [[ -n "$latest" && -f "$latest/SHA256SUMS.txt" ]] || {
   echo 'evidence snapshot or hash manifest missing' >&2
@@ -107,6 +133,7 @@ latest="$(find "$LAB_DIR/evidence" -mindepth 1 -maxdepth 1 -type d | sort | tail
 
 "$SCRIPT" destroy --yes
 trap - EXIT
+rm -rf "$SHIM_DIR"
 
 [[ ! -e "$LAB_DIR/.env" ]] || { echo '.env remained after destroy' >&2; exit 1; }
 [[ ! -e "$LAB_DIR/tls/server.key" ]] || { echo 'TLS private key remained after destroy' >&2; exit 1; }

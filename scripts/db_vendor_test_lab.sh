@@ -754,16 +754,22 @@ exposure_guard() {
 
 set_vendor_password() {
   note "Applying vendor password after initialization"
+  # The password reaches psql only through the environment and is read with
+  # \getenv (psql 15+), so it never appears in a process argument list.
   (
     cd "$LAB_DIR"
+    export VENDOR_PASSWORD
     docker compose --env-file "$ENV_FILE" exec -T \
-      -e PGOPTIONS='-c log_statement=none' postgres \
+      -e PGOPTIONS='-c log_statement=none' \
+      -e VENDOR_PASSWORD \
+      postgres \
       psql -v ON_ERROR_STOP=1 \
       -U "$ADMIN_USER" \
       -d "$DB_NAME" \
-      -v vendor_password="$VENDOR_PASSWORD" \
-      <<< "ALTER ROLE \"$VENDOR_USER\" PASSWORD :'vendor_password';" \
-      >/dev/null
+      >/dev/null <<EOF_SQL
+\\getenv vendor_password VENDOR_PASSWORD
+ALTER ROLE "$VENDOR_USER" PASSWORD :'vendor_password';
+EOF_SQL
   )
 }
 

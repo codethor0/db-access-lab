@@ -8,6 +8,12 @@ Run:
 
     bash -n scripts/db_vendor_test_lab.sh
     shellcheck scripts/db_vendor_test_lab.sh tests/*.sh
+    ./tests/psql_regression.sh
+
+The psql regression test fails if a `psql -c` command references a `:'var'` or
+`:"var"` variable (psql does not interpolate variables in `-c`), or if a secret
+is passed with `-v name=...` or a conninfo `password=...`, where it would be
+visible in the process argument list.
 
 ## Watcher regression test
 
@@ -38,6 +44,7 @@ The E2E test verifies:
 - TEMP table creation fails;
 - high-signal watcher alerts are produced;
 - evidence export creates a SHA-256 manifest;
+- no lab password appears in any docker or psql process argument list;
 - destroy removes `.env` and the TLS private key.
 
 The test creates and destroys Docker volumes. Do not point `LAB_DIR` at an

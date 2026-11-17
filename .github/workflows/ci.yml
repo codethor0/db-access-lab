@@ -31,6 +31,9 @@ jobs:
       - name: ShellCheck
         run: shellcheck scripts/db_vendor_test_lab.sh tests/*.sh
 
+      - name: psql regression
+        run: ./tests/psql_regression.sh
+
       - name: Initialize generated lab files
         env:
           LAB_DIR: ${{ runner.temp }}/db-access-lab-static

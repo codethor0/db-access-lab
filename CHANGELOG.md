@@ -6,6 +6,20 @@ The project follows Semantic Versioning once tagged releases begin.
 
 ## Unreleased
 
+### Security
+
+- Pass the vendor password to psql through the environment and load it with
+  `\getenv`, so it no longer appears in the docker or psql argument list.
+- Pass the E2E test's database password as `PGPASSWORD` instead of in the
+  connection string.
+
+### Testing
+
+- Added a static psql regression test for `-c` variable references and secrets
+  in process arguments.
+- The Docker E2E test records every docker argument list and fails if a lab
+  password appears in one.
+
 ## [0.1.1] - 2026-09-29
 
 ### Security
